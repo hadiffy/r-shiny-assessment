@@ -1,10 +1,3 @@
-# Cumulative Paid Claims - R Shiny app
-#
-# Lets the user enter a claims-paid triangle by hand or upload it from a
-# CSV/Excel file, pick a tail factor, and then projects the cumulative paid
-# claims using the basic chain-ladder method. Results are shown as a table
-# and a chart.
-
 library(shiny)
 library(bslib)
 library(dplyr)
@@ -48,8 +41,7 @@ build_skeleton <- function(start_year, end_year) {
   }))
 }
 
-# map an uploaded file's columns onto the 3 we need (match on keywords so an
-# Excel export still works)
+# map an uploaded file's columns onto the 3 we need
 tidy_upload <- function(df) {
   nm <- tolower(names(df))
   loss_col <- which(grepl("loss", nm))[1]
