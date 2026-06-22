@@ -17,27 +17,24 @@ library(readxl)
 library(rhandsontable)
 library(DT)
 
-# Column labels used in the editable grid (kept human-friendly on purpose).
 col_labels <- c("Loss Year", "Development Year", "Amount of Claims Paid ($)")
 
-# A single blank row, so the app opens with a clean, empty table.
+# start the app with an empty table
 empty_claims <- tibble(
   `Loss Year` = NA_real_,
   `Development Year` = NA_real_,
   `Amount of Claims Paid ($)` = NA_real_
 )
 
-# Sample data taken from the assignment spreadsheet.
+# sample data from the assignment spreadsheet
 sample_claims <- tibble(
   `Loss Year` = c(2017, 2017, 2017, 2018, 2018, 2019),
   `Development Year` = c(1, 2, 3, 1, 2, 1),
   `Amount of Claims Paid ($)` = c(524792, 218265, 2225, 798502, 197157, 917636)
 )
 
-# Build the empty run-off triangle from a range of loss years. The oldest year
-# gets the most development years and each later year gets one fewer, e.g.
-# 2017-2019 -> 2017 has 3 dev years, 2018 has 2, 2019 has 1. The user then only
-# needs to fill in the claim amounts.
+# build the empty triangle from a year range: oldest year has the most dev
+# years, each later year one fewer (2017-2019 -> 3, 2, 1 dev years)
 build_skeleton <- function(start_year, end_year) {
   years <- start_year:end_year
   n <- length(years)
@@ -51,15 +48,15 @@ build_skeleton <- function(start_year, end_year) {
   }))
 }
 
-# Rename whatever columns an uploaded file has into the three we expect.
-# We match on key words so a file exported straight from Excel still works.
+# map an uploaded file's columns onto the 3 we need (match on keywords so an
+# Excel export still works)
 tidy_upload <- function(df) {
   nm <- tolower(names(df))
   loss_col <- which(grepl("loss", nm))[1]
   dev_col <- which(grepl("dev", nm))[1]
   paid_col <- which(grepl("paid|claim|amount", nm))[1]
 
-  # If the headers are not recognised, fall back to the first three columns.
+  # headers not recognised -> just use the first 3 columns
   if (anyNA(c(loss_col, dev_col, paid_col))) {
     loss_col <- 1
     dev_col <- 2
@@ -74,8 +71,8 @@ tidy_upload <- function(df) {
            !is.na(`Amount of Claims Paid ($)`))
 }
 
-# Core calculation: incremental triangle -> cumulative square via chain-ladder.
-# The last development step uses the user-supplied tail factor.
+# chain-ladder: incremental triangle -> projected cumulative square.
+# last development step uses the tail factor
 build_cumulative <- function(claims, tail_factor) {
   claims <- claims %>%
     setNames(c("loss_year", "dev_year", "paid")) %>%
@@ -89,14 +86,14 @@ build_cumulative <- function(claims, tail_factor) {
   n_obs <- max(claims$dev_year)   # development years we actually observe
   n_dev <- n_obs + 1              # one extra column projected with the tail
 
-  # Incremental amounts laid out as a loss-year x development-year matrix.
+  # incremental amounts as a loss year x dev year matrix
   inc <- matrix(
     NA_real_, nrow = length(loss_years), ncol = n_obs,
     dimnames = list(loss_years, seq_len(n_obs))
   )
   inc[cbind(match(claims$loss_year, loss_years), claims$dev_year)] <- claims$paid
 
-  # Cumulate the known (upper-left) part of each row.
+  # cumulate the known part of each row
   cum <- matrix(
     NA_real_, nrow = length(loss_years), ncol = n_dev,
     dimnames = list(loss_years, seq_len(n_dev))
@@ -106,7 +103,7 @@ build_cumulative <- function(claims, tail_factor) {
     cum[i, known] <- cumsum(inc[i, known])
   }
 
-  # Volume-weighted development factors, with the tail factor tacked on.
+  # volume-weighted development factors + tail
   factors <- numeric(n_dev - 1)
   for (j in seq_len(n_obs - 1)) {
     rows <- which(!is.na(cum[, j + 1]))
@@ -114,7 +111,7 @@ build_cumulative <- function(claims, tail_factor) {
   }
   factors[n_dev - 1] <- tail_factor
 
-  # Fill the lower triangle and the tail column, left to right.
+  # project the lower triangle + tail column, left to right
   for (j in 2:n_dev) {
     gaps <- which(is.na(cum[, j]))
     cum[gaps, j] <- cum[gaps, j - 1] * factors[j - 1]
@@ -189,8 +186,7 @@ ui <- page_sidebar(
 )
 
 server <- function(input, output, session) {
-  # The editable grid is the single source of truth for the input data.
-  # Start empty so the table is clean when the app opens.
+  # the grid is the single source of truth for the input data
   claims <- reactiveVal(empty_claims)
 
   output$grid <- renderRHandsontable({
@@ -200,12 +196,12 @@ server <- function(input, output, session) {
       hot_col("Amount of Claims Paid ($)", format = "0,0")
   })
 
-  # Keep the reactive value in sync with manual edits.
+  # keep claims() in sync with manual edits
   observeEvent(input$grid, {
     claims(hot_to_r(input$grid))
   })
 
-  # A file upload simply loads its contents into the grid.
+  # an upload just loads its contents into the grid
   observeEvent(input$file, {
     ext <- tools::file_ext(input$file$name)
     raw <- switch(
@@ -222,18 +218,15 @@ server <- function(input, output, session) {
     claims(sample_claims)
   })
 
-  # Append a blank row. Works even when the table has been emptied, which
-  # the right-click menu cannot do once the last row is gone.
+  # add row button (right-click menu can't add once the table is empty)
   observeEvent(input$add_row, {
     claims(bind_rows(claims(), empty_claims))
   })
 
-  # Reset the table back to a single blank row.
   observeEvent(input$clear, {
     claims(empty_claims)
   })
 
-  # Build the triangle skeleton from the chosen range of loss years.
   observeEvent(input$generate, {
     if (anyNA(c(input$start_year, input$end_year)) ||
         input$end_year < input$start_year) {
